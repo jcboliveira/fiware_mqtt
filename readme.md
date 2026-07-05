@@ -1,6 +1,6 @@
 fiware-mqtt — Bridge FIWARE → MQTT
 
-O fiware-mqtt é um utilitário em Python para recolha e normalização de dados FIWARE provenientes da Urban Platform do Porto Digital, suportando as entidades AirQualityObserved e WeatherObserved. Converte as observações em métricas estruturadas e publica-as em tópicos MQTT organizados por estação. Funciona em modo contínuo, não utiliza Home Assistant Discovery e é configurado exclusivamente por argumentos de linha de comandos.
+O fiware-mqtt é um utilitário em Python para recolha e normalização de dados FIWARE provenientes da Urban Platform do Porto Digital, suportando as entidades AirQualityObserved e WeatherObserved. Converte as observações em métricas estruturadas e publica-as em tópicos MQTT organizados por estação. Funciona em modo contínuo, pode utilizar o Home Assistant Discovery e é configurado exclusivamente por argumentos de linha de comandos.
 
 1 - Instalação
 
@@ -30,65 +30,67 @@ nano fiware-mqtt
 1.7) Tornar executável:
 chmod +x fiware-mqtt
 
-1.8) Obter a API Key do LocationIQ (Geocoding)
+2) Opcional para arranque automático
+2.1) Criar serviço systemd:
+nano /etc/systemd/system/fiware.service
 
-1.8.1) Criar conta gratuita em:
-https://locationiq.com/
+    [Unit]
+    Description=FIWARE ~F~R MQTT Bridge
+    After=network.target
 
-1.8.2) Aceder ao painel → Dashboard → API Access Tokens
+    [Service]
+    Type=simple
+    Environment="VIRTUAL_ENV=/root/fiware-ha"
+    Environment="PATH=/root/fiware-ha/bin:/usr/bin:/bin"
+    ExecStart=/root/fiware-ha/bin/python /root/fiware-ha/fiware_mqtt.py
+    WorkingDirectory=/root/fiware-ha
+    Restart=always
+    RestartSec=5
+    User=root
 
-Copiar a chave do tipo "Search & Reverse Geocoding"
+    [Install]
+    WantedBy=multi-user.target
 
-A key tem o formato:
-pk.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+2.2) Ativar:
+systemctl daemon-reload
+systemctl enable fiware
+systemctl start fiware
 
-Esta key é obrigatória para converter coordenadas FIWARE em nomes de localização.
+2.3) Logs:
+ journalctl -u fiware -f
 
-Passar a key como argumento
-O script exige a key via argumento obrigatório:
---geocoding-key <API_KEY>
-
-Exemplo simples:
-./fiware-mqtt --geocoding-key pk.MINHA_KEY
 
 Exemplo com MQTT configurado:
-./fiware-mqtt --mqtt-host 192.168.1.50 --mqtt-user admin --mqtt-pass segredo --geocoding-key pk.MINHA_KEY
+./fiware-mqtt --mqtt-host 192.168.1.50 --mqtt-user admin --mqtt-pass segredo 
+
+Exemplo com MQTT configurado e envio com auto discovery para o Home assistant:
+./fiware-mqtt --mqtt-host 192.168.1.50 --mqtt-user admin --mqtt-pass segredo --homeassistant-discovery
 
 Exemplo com filtros de estações:
-./fiware-mqtt --stations "Paranhos 4,Ramalde" --geocoding-key pk.MINHA_KEY
+./fiware-mqtt --stations "Paranhos 4,Ramalde" 
 
 2) Execução
 
-2.1) saber as estações existentes. Definir broker MQTT e credenciais, geocoding-key devolve lista de estações
+2.1) saber as estações existentes. Definir broker MQTT e credenciais devolve lista de estações
 
-./fiware-mqtt --mqtt-host xx.xx.xx.xx --mqtt-user admin --mqtt-pass segredo --geocoding-key pk.MINHA_KEY --list-stations
+./fiware-mqtt --mqtt-host xx.xx.xx.xx --mqtt-user admin --mqtt-pass segredo --list-stations
 
-2.2)incluir só determinadas estações. Definir broker MQTT e credenciais, geocoding-key, lista de estações
+2.2)incluir só determinadas estações. Definir broker MQTT e credenciais, lista de estações
 
-./fiware-mqtt --mqtt-host xx.xx.xx.xx --mqtt-user admin --mqtt-pass segredo --geocoding-key pk.MINHA_KEY -stations "estação 1,estação 2"
+./fiware-mqtt --mqtt-host xx.xx.xx.xx --mqtt-user admin --mqtt-pass segredo  -stations "estação 1,estação 2"
 
-2.3) Excluir estações.Definir broker MQTT e credenciais, geocoding-key, lista de estações
+2.3) Excluir estações.Definir broker MQTT e credenciais,  lista de estações
 
-./fiware-mqtt -mqtt-host 192.168.1.50 --mqtt-user admin --mqtt-pass segredo --geocoding-key pk.MINHA_KEY --exclude "estação 1,estação 2" 
+./fiware-mqtt -mqtt-host 192.168.1.50 --mqtt-user admin --mqtt-pass segredo --exclude "estação 1,estação 2" 
 
 2.4) exemplos
-./fiware-mqtt --list-stations --mqtt-host 192.168.1.120 --mqtt-user mqtt --mqtt-pass mqtt --geocoding-key pk.ef998abd3c
+./fiware-mqtt --list-stations --mqtt-host 192.168.1.120 --mqtt-user mqtt --mqtt-pass mqtt 
 
- - Bonfim
- - Bonfim 3
- - Cedofeita
- - Nevogilde
- - Nevogilde 2
- - Nevogilde 3
- - Nevogilde 4
- - Paranhos
- - Paranhos 2
- - Paranhos 3
- - Paranhos 4
- - Porto
- - Santo Ildefonso
+ - Pólo Asprela
+ - Aliados
 
-./fiware-mqtt --stations "Paranhos, Paranhos3" --mqtt-host 192.168.1.120 --mqtt-user mqtt --mqtt-pass mqtt --geocoding-key pk.ef998abd3c
+
+./fiware-mqtt --stations "Paranhos, Paranhos3" --mqtt-host 192.168.1.120 --mqtt-user mqtt --mqtt-pass mqtt 
 
 2) Execução
 
@@ -121,11 +123,9 @@ fiware/weather/<estacao>/last_mqtt_update
 Notas técnicas
 Observações FIWARE com mais de 24 horas são descartadas.
 
-Os nomes das estações são resolvidos via geocoding (LocationIQ) e armazenados em cache.
-
 O ciclo de publicação opera a cada 60 segundos.
 
-O programa é agnóstico ao consumidor MQTT e não implementa autodiscovery.
+O programa é agnóstico ao consumidor MQTT e pode implementar autodiscovery.
 
 Licença
 Uso livre para fins pessoais, académicos ou experimentais.

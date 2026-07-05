@@ -30,6 +30,12 @@ def parse_args():
     parser.add_argument("--list-stations", action="store_true",
                         help="Lista as estações disponíveis e termina")
 
+    parser.add_argument(
+        "--homeassistant-discovery",
+        action="store_true",
+        help="Ativa MQTT Discovery para Home Assistant"
+    )
+
     return parser.parse_args()
 
 def station_allowed(local_name, args):
@@ -52,6 +58,9 @@ def station_allowed(local_name, args):
 FIWARE_URL = "https://broker.fiware.urbanplatform.portodigital.pt/v2/entities"
 
 MQTT_PORT = 1883
+DISCOVERY_PREFIX = "homeassistant"
+
+published_discovery = set()
 
 # ---------------------------------------------------------
 # MQTT
@@ -228,23 +237,30 @@ def publish_values(client, entity_id, entity, local_name, sensor_base, sensor_fi
                 except:
                     pass
 
-            client.publish(f"{sensor_base}/{entity_id}/{field}", value)
+            
+            if field == "windSpeed":
+                try:
+                    value = round(value * 3.6, 1)
+                except:
+                    pass
 
-    client.publish(f"{sensor_base}/{entity_id}/local", local_name)
+            client.publish(f"{sensor_base}/{entity_id}/{field}", value, retain=True)
+
+    client.publish(f"{sensor_base}/{entity_id}/local", local_name, retain=True)
 
     if "dateObserved" in entity:
-        client.publish(f"{sensor_base}/{entity_id}/dateObserved", entity["dateObserved"]["value"])
+        client.publish(f"{sensor_base}/{entity_id}/dateObserved", entity["dateObserved"]["value"], retain=True)
 
     now = datetime.now(timezone.utc).isoformat()
-    client.publish(f"{sensor_base}/{entity_id}/last_mqtt_update", now)
+    client.publish(f"{sensor_base}/{entity_id}/last_mqtt_update", now, retain=True)
 
     if include_aqi:
         aqi = compute_aqi(entity)
         if aqi is not None:
-            client.publish(f"{sensor_base}/{entity_id}/aqi", aqi)
+            client.publish(f"{sensor_base}/{entity_id}/aqi", aqi, retain=True)
 
         main = compute_main_pollutant(entity)
-        client.publish(f"{sensor_base}/{entity_id}/main_pollutant", main)
+        client.publish(f"{sensor_base}/{entity_id}/main_pollutant", main, retain=True)
 
 
 # ---------------------------------------------------------
@@ -299,6 +315,188 @@ def normalize_station_name(name):
     name = name.lower()
     name = re.sub(r"[^a-z0-9]+", "_", name)
     return name.strip("_")
+
+# ---------------------------------------------------------
+# publish_discovery
+# ---------------------------------------------------------
+
+def publish_discovery(
+    client,
+    unique_id,
+    station_name,
+    sensor_name,
+    state_topic,
+    unit=None,
+    device_class=None,
+    state_class="measurement"
+):
+
+    config_topic = (
+        f"homeassistant/sensor/"
+        f"{unique_id}/config"
+    )
+
+    payload = {
+        "name": sensor_name,
+        "unique_id": unique_id,
+        "state_topic": state_topic,
+
+        "device": {
+            "identifiers": [
+                f"fiware_{normalize_station_name(station_name)}"
+            ],
+            "name": station_name,
+            "manufacturer": "Porto Digital",
+            "model": "FIWARE"
+        }
+    }
+
+    if unit:
+        payload["unit_of_measurement"] = unit
+
+    if device_class:
+        payload["device_class"] = device_class
+
+    if state_class:
+        payload["state_class"] = state_class
+
+    client.publish(
+        config_topic,
+        json.dumps(payload),
+        retain=True
+    )
+
+# ---------------------------------------------------------
+# publish_weather_discovery
+# ---------------------------------------------------------
+def publish_weather_discovery(
+    client,
+    entity_id,
+    station_name
+):
+
+    base = f"fiware/weather/{entity_id}"
+
+    publish_discovery(
+        client,
+        f"{entity_id}_temperature",
+        station_name,
+        "Temperatura",
+        f"{base}/temperature",
+        unit="°C",
+        device_class="temperature"
+    )
+
+    publish_discovery(
+        client,
+        f"{entity_id}_humidity",
+        station_name,
+        "Humidade",
+        f"{base}/relativeHumidity",
+        unit="%",
+        device_class="humidity"
+    )
+
+    publish_discovery(
+        client,
+        f"{entity_id}_windspeed",
+        station_name,
+        "Velocidade do vento",
+        f"{base}/windSpeed",
+        unit="km/h"
+    )
+
+    publish_discovery(
+        client,
+        f"{entity_id}_precipitation",
+        station_name,
+        "Precipitação",
+        f"{base}/precipitation",
+        unit="mm"
+    )
+
+    publish_discovery(
+        client,
+        f"{entity_id}_uv",
+        station_name,
+        "Índice UV",
+        f"{base}/uVIndexMax"
+    )
+
+# ---------------------------------------------------------
+# publish_airquality_discovery
+# ---------------------------------------------------------
+def publish_airquality_discovery(
+    client,
+    entity_id,
+    station_name
+):
+
+    base = f"fiware/airquality/{entity_id}"
+
+    publish_discovery(
+        client,
+        f"{entity_id}_pm25",
+        station_name,
+        "PM2.5",
+        f"{base}/pm25",
+        unit="µg/m³"
+    )
+
+    publish_discovery(
+        client,
+        f"{entity_id}_pm10",
+        station_name,
+        "PM10",
+        f"{base}/pm10",
+        unit="µg/m³"
+    )
+
+    publish_discovery(
+        client,
+        f"{entity_id}_no2",
+        station_name,
+        "NO₂",
+        f"{base}/no2",
+        unit="µg/m³"
+    )
+
+    publish_discovery(
+        client,
+        f"{entity_id}_o3",
+        station_name,
+        "O₃",
+        f"{base}/o3",
+        unit="µg/m³"
+    )
+
+    publish_discovery(
+        client,
+        f"{entity_id}_co",
+        station_name,
+        "CO",
+        f"{base}/co",
+        unit="µg/m³"
+    )
+
+    publish_discovery(
+        client,
+        f"{entity_id}_aqi",
+        station_name,
+        "AQI",
+        f"{base}/aqi"
+    )
+
+
+    publish_discovery(
+        client,
+        f"{entity_id}_main_pollutant",
+        station_name,
+        "Poluente Principal",
+        f"{base}/main_pollutant",
+        state_class=None
+    )
+
 
 # ---------------------------------------------------------
 # LOOP AIR QUALITY
@@ -361,11 +559,18 @@ def loop_airquality(client, args):
 
             print(f"INFO: Estação '{local_name}' → ID '{entity_id}'")
 
+            if args.homeassistant_discovery:
+                publish_airquality_discovery(
+                    client,
+                    entity_id,
+                    local_name
+                )
+
             publish_values(client, entity_id, entity, local_name, SENSOR_BASE_AQ,
                            SENSOR_FIELDS_AQ, EXTRA_FIELDS_AQ, include_aqi=True)
 
-            client.publish(f"{SENSOR_BASE_AQ}/{entity_id}/latitude", lat)
-            client.publish(f"{SENSOR_BASE_AQ}/{entity_id}/longitude", lon)
+            client.publish(f"{SENSOR_BASE_AQ}/{entity_id}/latitude", lat, retain=True)
+            client.publish(f"{SENSOR_BASE_AQ}/{entity_id}/longitude", lon, retain=True)
 
         time.sleep(60)
 
@@ -379,7 +584,8 @@ def loop_weather(client, args):
         "temperature": {},
         "windSpeed": {},
         "relativeHumidity": {},
-        "uv": {},
+        "uVIndexMax": {},
+        "uv_index": {},
     }
 
     EXTRA_FIELDS_W = {
@@ -406,7 +612,7 @@ def loop_weather(client, args):
                 print(f"AVISO: Estação '{local_name}' filtrada.")
                 continue
 
-            safe_local = local_name.lower().replace(" ", "_")
+            safe_local = normalize_station_name(local_name)
             count = name_counts.get(safe_local, 0) + 1
             name_counts[safe_local] = count
 
@@ -418,6 +624,13 @@ def loop_weather(client, args):
                     date_obs = parse_fiware_datetime(date_obs_str)
                     age = datetime.now(timezone.utc) - date_obs
 
+                    # Ignorar datas futuras
+                    if age < timedelta(0):
+                        print(f"AVISO: {entity_id} ignorado (data futura).")
+                        continue
+
+
+                    # Ignorar observações antigas
                     if age > timedelta(days=1):
                         print(f"AVISO: {entity_id} ignorado (observação antiga).")
                         continue
@@ -427,11 +640,18 @@ def loop_weather(client, args):
 
             print(f"INFO: Estação '{local_name}' → ID '{entity_id}'")
 
+            if args.homeassistant_discovery:
+                publish_weather_discovery(
+                    client,
+                    entity_id,
+                    local_name
+                )
+
             publish_values(client, entity_id, entity, local_name, SENSOR_BASE_W,
                            SENSOR_FIELDS_W, EXTRA_FIELDS_W)
 
-            client.publish(f"{SENSOR_BASE_W}/{entity_id}/latitude", lat)
-            client.publish(f"{SENSOR_BASE_W}/{entity_id}/longitude", lon)
+            client.publish(f"{SENSOR_BASE_W}/{entity_id}/latitude", lat, retain=True)
+            client.publish(f"{SENSOR_BASE_W}/{entity_id}/longitude", lon, retain=True)
 
         time.sleep(60)
 
