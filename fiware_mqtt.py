@@ -27,9 +27,6 @@ def parse_args():
     parser.add_argument("--mqtt-pass", type=str, required=True,
                         help="Password do broker MQTT")
 
-    parser.add_argument("--geocoding-key", type=str, required=True,
-                        help="API key do LocationIQ para geocoding")
-
     parser.add_argument("--list-stations", action="store_true",
                         help="Lista as estações disponíveis e termina")
 
@@ -55,23 +52,6 @@ def station_allowed(local_name, args):
 FIWARE_URL = "https://broker.fiware.urbanplatform.portodigital.pt/v2/entities"
 
 MQTT_PORT = 1883
-
-LOCATIONIQ_KEY = None
-CACHE_FILE = "geocache.json"
-
-# ---------------------------------------------------------
-# CACHE DE LOCALIZAÇÕES
-# ---------------------------------------------------------
-if os.path.exists(CACHE_FILE):
-    with open(CACHE_FILE, "r") as f:
-        location_cache = json.load(f)
-else:
-    location_cache = {}
-
-def save_cache():
-    with open(CACHE_FILE, "w") as f:
-        json.dump(location_cache, f, indent=2)
-
 
 # ---------------------------------------------------------
 # MQTT
@@ -126,54 +106,15 @@ def mqtt_init(args):
     threading.Thread(target=mqtt_reconnect_loop, args=(client, args), daemon=True).start()
     return client
 
-
 # ---------------------------------------------------------
-# GEOCODING
+# Station name
 # ---------------------------------------------------------
-def get_location_name(lat, lon):
-    key = f"{lat},{lon}"
-
-    if key in location_cache:
-        return location_cache[key]
-
-    url = "https://us1.locationiq.com/v1/reverse"
-    params = {"key": LOCATIONIQ_KEY, "lat": lat, "lon": lon, "format": "json"}
-
-    for attempt in range(1, 6):
-        try:
-            r = requests.get(url, params=params, timeout=5)
-            if "Rate Limited" in r.text:
-                time.sleep(3)
-                continue
-
-            data = r.json()
-            addr = data.get("address", {})
-
-            base = (
-                addr.get("suburb") or
-                addr.get("neighbourhood") or
-                addr.get("city_district") or
-                addr.get("town") or
-                addr.get("city") or
-                "Desconhecido"
-            )
-
-            existing = [v for v in location_cache.values() if v.startswith(base)]
-            final_name = base if len(existing) == 0 else f"{base} {len(existing)+1}"
-
-            location_cache[key] = final_name
-            save_cache()
-            return final_name
-
-        except Exception as e:
-            print(f"ERRO GEOCODING: {e}")
-
-        time.sleep(3)
-
-    location_cache[key] = "Desconhecido"
-    save_cache()
-    return "Desconhecido"
-
+def get_station_name(entity):
+    return (
+        entity.get("name", {})
+              .get("value", "Desconhecido")
+              .strip()
+    )
 
 # ---------------------------------------------------------
 # AQI
@@ -331,18 +272,11 @@ def list_stations():
     aq = fetch_fiware("AirQualityObserved")
     wt = fetch_fiware("WeatherObserved")
 
-    coords_seen = set()
+
     names = []
 
     for entity in aq + wt:
-        lon, lat = entity["location"]["value"]["coordinates"]
-        key = f"{lat},{lon}"
-
-        if key in coords_seen:
-            continue
-
-        coords_seen.add(key)
-        local_name = get_location_name(lat, lon)
+        local_name = get_station_name(entity)
         names.append(local_name)
 
     names = sorted(set(names))
@@ -353,6 +287,18 @@ def list_stations():
 
     print("\nUse estes nomes com --stations ou --exclude.\n")
 
+# ---------------------------------------------------------
+# Normalize names
+# ---------------------------------------------------------
+import re
+import unicodedata
+
+def normalize_station_name(name):
+    name = unicodedata.normalize("NFD", name)
+    name = "".join(c for c in name if unicodedata.category(c) != "Mn")
+    name = name.lower()
+    name = re.sub(r"[^a-z0-9]+", "_", name)
+    return name.strip("_")
 
 # ---------------------------------------------------------
 # LOOP AIR QUALITY
@@ -388,13 +334,13 @@ def loop_airquality(client, args):
 
         for entity in data:
             lon, lat = entity["location"]["value"]["coordinates"]
-            local_name = get_location_name(lat, lon)
+            local_name = get_station_name(entity)
 
             if not station_allowed(local_name, args):
                 print(f"AVISO: Estação '{local_name}' filtrada.")
                 continue
 
-            safe_local = local_name.lower().replace(" ", "_")
+            safe_local = normalize_station_name(local_name)
             count = name_counts.get(safe_local, 0) + 1
             name_counts[safe_local] = count
 
@@ -454,7 +400,7 @@ def loop_weather(client, args):
 
         for entity in data:
             lon, lat = entity["location"]["value"]["coordinates"]
-            local_name = get_location_name(lat, lon)
+            local_name = get_station_name(entity)
 
             if not station_allowed(local_name, args):
                 print(f"AVISO: Estação '{local_name}' filtrada.")
@@ -495,7 +441,6 @@ def loop_weather(client, args):
 # ---------------------------------------------------------
 if __name__ == "__main__":
     args = parse_args()
-    LOCATIONIQ_KEY = args.geocoding_key
 
     if args.list_stations:
         list_stations()
