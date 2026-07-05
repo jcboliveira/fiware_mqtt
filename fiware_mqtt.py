@@ -62,6 +62,7 @@ DISCOVERY_PREFIX = "homeassistant"
 
 published_discovery = set()
 
+
 # ---------------------------------------------------------
 # MQTT
 # ---------------------------------------------------------
@@ -534,6 +535,101 @@ def publish_airquality_discovery(
     )
 
 # ---------------------------------------------------------
+# publish_device_tracker_discovery
+# ---------------------------------------------------------
+def publish_device_tracker_discovery(
+    client,
+    entity_id,
+    station_name,
+    lat,
+    lon
+):
+
+    config_topic = (
+        f"homeassistant/device_tracker/"
+        f"{entity_id}/config"
+    )
+
+    payload = {
+        "name": station_name,
+        "unique_id": f"{entity_id}_tracker",
+
+        "state_topic":
+            f"fiware/location/{entity_id}/state",
+
+        "json_attributes_topic":
+            f"fiware/location/{entity_id}/attributes",
+
+        "source_type": "gps",
+
+        "device": {
+            "identifiers": [
+                f"fiware_{entity_id}"
+            ],
+            "name": station_name,
+            "manufacturer": "Porto Digital",
+            "model": "FIWARE"
+        }
+    }
+
+    client.publish(
+        config_topic,
+        json.dumps(payload),
+        retain=True
+    )
+
+    client.publish(
+        f"fiware/location/{entity_id}/state",
+        "home",
+        retain=True
+    )
+
+    client.publish(
+        f"fiware/location/{entity_id}/attributes",
+        json.dumps({
+            "latitude": lat,
+            "longitude": lon
+        }),
+        retain=True
+    )
+
+
+# ---------------------------------------------------------
+# remove_discovery
+# ---------------------------------------------------------
+def remove_discovery(client, entity_id):
+
+    prefixes = [
+        f"{entity_id}_temperature",
+        f"{entity_id}_humidity",
+        f"{entity_id}_windspeed",
+        f"{entity_id}_precipitation",
+        f"{entity_id}_uv",
+        f"{entity_id}_pm25",
+        f"{entity_id}_pm10",
+        f"{entity_id}_o3",
+        f"{entity_id}_no2",
+        f"{entity_id}_co",
+        f"{entity_id}_aqi",
+        f"{entity_id}_latitude",
+        f"{entity_id}_longitude",
+    ]
+
+    for sensor in prefixes:
+
+        client.publish(
+            f"homeassistant/sensor/{sensor}/config",
+            "",
+            retain=True
+        )
+
+    client.publish(
+        f"homeassistant/device_tracker/{entity_id}/config",
+        "",
+        retain=True
+    )
+
+# ---------------------------------------------------------
 # LOOP AIR QUALITY
 # ---------------------------------------------------------
 def loop_airquality(client, args):
@@ -587,10 +683,15 @@ def loop_airquality(client, args):
 
                     if age > timedelta(days=1):
                         print(f"AVISO: {entity_id} ignorado (observação antiga).")
+                        remove_discovery(
+                            client,
+                            entity_id
+                        )
                         continue
 
                 except Exception as e:
                     print(f"ERRO: Data inválida em AirQuality: {e}")
+            
 
             print(f"INFO: Estação '{local_name}' → ID '{entity_id}'")
 
@@ -606,6 +707,16 @@ def loop_airquality(client, args):
 
             client.publish(f"{SENSOR_BASE_AQ}/{entity_id}/latitude", lat, retain=True)
             client.publish(f"{SENSOR_BASE_AQ}/{entity_id}/longitude", lon, retain=True)
+
+            if args.homeassistant_discovery:
+
+                publish_device_tracker_discovery(
+                    client,
+                    entity_id,
+                    local_name,
+                    lat,
+                    lon
+                )
 
         time.sleep(60)
 
@@ -643,6 +754,15 @@ def loop_weather(client, args):
             lon, lat = entity["location"]["value"]["coordinates"]
             local_name = get_station_name(entity)
 
+            # removing test
+#            if local_name == "Aliados":
+#                print("TESTE: A remover Aliados")
+#                remove_discovery(
+#                    client,
+#                    entity_id
+#                )
+ #               continue
+
             if not station_allowed(local_name, args):
                 print(f"AVISO: Estação '{local_name}' filtrada.")
                 continue
@@ -667,7 +787,11 @@ def loop_weather(client, args):
 
                     # Ignorar observações antigas
                     if age > timedelta(days=1):
-                        print(f"AVISO: {entity_id} ignorado (observação antiga).")
+                        print(f"AVISO: {entity_id} ignorado (observação antiga).")                  
+                        remove_discovery(
+                            client,
+                            entity_id
+                        )
                         continue
 
                 except Exception as e:
@@ -687,6 +811,16 @@ def loop_weather(client, args):
 
             client.publish(f"{SENSOR_BASE_W}/{entity_id}/latitude", lat, retain=True)
             client.publish(f"{SENSOR_BASE_W}/{entity_id}/longitude", lon, retain=True)
+
+            if args.homeassistant_discovery:
+
+                publish_device_tracker_discovery(
+                    client,
+                    entity_id,
+                    local_name,
+                    lat,
+                    lon
+                )
 
         time.sleep(60)
 
