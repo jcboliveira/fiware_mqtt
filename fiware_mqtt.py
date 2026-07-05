@@ -423,6 +423,24 @@ def publish_weather_discovery(
         f"{base}/uVIndexMax"
     )
 
+    publish_discovery(
+        client,
+        f"{entity_id}_latitude",
+        station_name,
+        "Latitude",
+        f"{base}/latitude",
+        state_class=None
+    )
+
+    publish_discovery(
+        client,
+        f"{entity_id}_longitude",
+        station_name,
+        "Longitude",
+        f"{base}/longitude",
+        state_class=None
+    )
+
 # ---------------------------------------------------------
 # publish_airquality_discovery
 # ---------------------------------------------------------
@@ -497,6 +515,23 @@ def publish_airquality_discovery(
         state_class=None
     )
 
+    publish_discovery(
+        client,
+        f"{entity_id}_latitude",
+        station_name,
+        "Latitude",
+        f"{base}/latitude",
+        state_class=None
+    )
+
+    publish_discovery(
+        client,
+        f"{entity_id}_longitude",
+        station_name,
+        "Longitude",
+        f"{base}/longitude",
+        state_class=None
+    )
 
 # ---------------------------------------------------------
 # LOOP AIR QUALITY
@@ -625,9 +660,9 @@ def loop_weather(client, args):
                     age = datetime.now(timezone.utc) - date_obs
 
                     # Ignorar datas futuras
-                    if age < timedelta(0):
-                        print(f"AVISO: {entity_id} ignorado (data futura).")
-                        continue
+ #                   if age < timedelta(hours=-1):
+ #                       print(f"AVISO: {entity_id} ignorado (data futura).")
+ #                       continue
 
 
                     # Ignorar observações antigas
