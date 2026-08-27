@@ -24,11 +24,11 @@ source env/bin/activate
 pip install requests paho-mqtt python-dateutil
 
 1.6) Criar ficheiro principal:
-nano fiware-mqtt  
+nano fiware-mqtt.py  
 (colar o script completo)
 
 1.7) Tornar executável:
-chmod +x fiware-mqtt
+chmod +x fiware-mqtt.py
 
 2) Opcional para arranque automático
 2.1) Criar serviço systemd:
